@@ -1,69 +1,36 @@
-using System;
-using System.IO;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting.WindowsServices;
-using Serilog;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using FuelTransactionImporterService.Models;
+using FuelTransactionImporterService.Service;
 
-internal class Program
-{
-    public static int Main(string[] args)
+IHost host = Host.CreateDefaultBuilder(args)
+    .UseWindowsService()
+    .ConfigureServices((hostContext, services) =>
     {
-        var logRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
-        var logDir = Path.Combine(logRoot, DateTime.Now.ToString("yyyy-MM-dd"));
-        Directory.CreateDirectory(logDir);
+        // appsettings.json'dan AppSettings nesnesini al ve DI konteynerine ekle
+        services.Configure<AppSettings>(hostContext.Configuration);
 
-        var logFilePath = Path.Combine(logDir, "log.txt");
+        // AppSettings instance'ýný singleton olarak ekle
+        services.AddSingleton(resolver =>
+            resolver.GetRequiredService<IOptions<AppSettings>>().Value
+        );
 
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Information()
-            .WriteTo.File(
-                logFilePath,
-                outputTemplate: "{Timestamp:HH:mm:ss} | {Level:u3} | {Message:lj}{NewLine}{Exception}",
-                rollingInterval: RollingInterval.Infinite,
-                shared: true)
-            .CreateLogger();
-
-        try
+        // Loggers sýnýfýný LogDirectory'yi okuyarak singleton olarak ekle
+        services.AddSingleton<Loggers>(resolver =>
         {
-            Log.Information("Uygulama baþladý.");
+            var settings = resolver.GetRequiredService<AppSettings>();
+            string logFolder = settings.LogSettings?.LogFolderPath ?? "Logs";
+            string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, logFolder);
+            return new Loggers(logPath);
+        });
 
-            CreateHostBuilder(args).Build().Run();
+        // Worker'ý HostedService olarak ekle
+        services.AddHostedService<Worker>();
 
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Fatal(ex, "Uygulama beklenmedik þekilde durdu.");
-            return 1;
-        }
-        finally
-        {
-            Log.CloseAndFlush();
-        }
-    }
+        // Ýstersen FuelTransactionServiceProcessor da inject edilebilir
+        services.AddTransient<FuelTransactionServiceProcessor>();
+    })
+    .Build();
 
-    public static IHostBuilder CreateHostBuilder(string[] args) =>
-        Host.CreateDefaultBuilder(args)
-            .UseWindowsService()
-            .UseSerilog()
-            .ConfigureAppConfiguration((hostingContext, config) =>
-            {
-                // appsettings.json, environment variables vb. eklenebilir
-                config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
-                config.AddEnvironmentVariables();
-                if (args != null)
-                    config.AddCommandLine(args);
-            })
-            .ConfigureServices((hostContext, services) =>
-            {
-                services.Configure<FuelApiSettings>(hostContext.Configuration.GetSection("FuelApiSettings"));
-                services.Configure<DatabaseSettings>(hostContext.Configuration.GetSection("DatabaseSettings"));
-
-                services.AddHttpClient();
-
-                services.AddSingleton<FuelTransactionProcessor>();
-                services.AddHostedService<Worker>();
-            });
-}
+await host.RunAsync();

@@ -1,38 +1,32 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using FuelTransactionImporterService.Service;
 
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
-    private readonly FuelTransactionProcessor _processor;
+    private readonly FuelTransactionServiceProcessor _serviceProcessor;
 
-    public Worker(ILogger<Worker> logger, FuelTransactionProcessor processor)
+    public Worker(ILogger<Worker> logger, FuelTransactionServiceProcessor serviceProcessor)
     {
         _logger = logger;
-        _processor = processor;
+        _serviceProcessor = serviceProcessor;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Worker baþladý: {time}", DateTimeOffset.Now);
+        _logger.LogInformation("Servis baþlatýldý.");
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await _processor.RunAsync();
+                await _serviceProcessor.RunAsync();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ýþlem sýrasýnda hata oluþtu.");
+                _logger.LogError(ex, "Servis çalýþýrken hata oluþtu.");
             }
 
             await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
         }
-
-        _logger.LogInformation("Worker duruyor: {time}", DateTimeOffset.Now);
     }
 }
