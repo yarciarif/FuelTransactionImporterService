@@ -1,15 +1,15 @@
-# Proje Adı
+# Petrol Ofisi API sinden YakÄ±t AlÄ±m Hareketleri Ã‡ekimi
 
-Bu proje, yakıt verilerini işlemek ve SQL Server'a kaydetmek amacıyla geliştirilmiştir.
+Bu proje, yakÄ±t verilerini iÅŸlemek ve SQL Server'a kaydetmek amacÄ±yla geliÅŸtirilmiÅŸtir.
 
-## Özellikler
+## Ã–zellikler
 
-- API'den veri çekme
-- SQL Server'a toplu kayıt
-- Günlük klasörlü loglama
-- Scheduled Task desteği
+- API'den veri Ã§ekme
+- SQL Server'a toplu kayÄ±t
+- GÃ¼nlÃ¼k klasÃ¶rlÃ¼ loglama
+- Scheduled Task desteÄŸi
 
-## Kullanım
+## KullanÄ±m
 
 ```bash
 FuelProcessor.exe
