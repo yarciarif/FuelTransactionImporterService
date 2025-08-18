@@ -162,6 +162,61 @@ namespace FuelTransactionImporterService.Service
                 return;
             }
 
+            // 10 dk içinde aynı plaka ve VIU_ID olanları birleştir
+            var groupedTransactions = new List<TransactionRecord>();
+
+            foreach (var plateGroup in newTransactions.GroupBy(t => new { t.Plate, t.ViuId }))
+            {
+                TransactionRecord currentGroup = null;
+
+                foreach (var t in plateGroup.OrderBy(t => t.TransactionDate))
+                {
+                    if (currentGroup == null)
+                    {
+                        currentGroup = new TransactionRecord
+                        {
+                            Plate = t.Plate,
+                            ViuId = t.ViuId,
+                            TransactionDate = t.TransactionDate,
+                            FuelType = t.FuelType,
+                            Liter = t.Liter,
+                            TotalPrice = t.TotalPrice,
+                            UnitPrice = t.UnitPrice,
+                            StationTransactionId = t.StationTransactionId
+                        };
+                    }
+                    else
+                    {
+                        var diff = t.TransactionDate - currentGroup.TransactionDate;
+                        if (diff.TotalMinutes <= 10)
+                        {
+                            currentGroup.Liter += t.Liter;
+                            currentGroup.TotalPrice += t.TotalPrice;
+                            currentGroup.StationTransactionId += $", {t.StationTransactionId}";
+                        }
+                        else
+                        {
+                            groupedTransactions.Add(currentGroup);
+                            currentGroup = new TransactionRecord
+                            {
+                                Plate = t.Plate,
+                                ViuId = t.ViuId,
+                                TransactionDate = t.TransactionDate,
+                                FuelType = t.FuelType,
+                                Liter = t.Liter,
+                                TotalPrice = t.TotalPrice,
+                                UnitPrice = t.UnitPrice,
+                                StationTransactionId = t.StationTransactionId
+                            };
+                        }
+                    }
+                }
+
+                if (currentGroup != null)
+                    groupedTransactions.Add(currentGroup);
+            }
+
+            // DataTable doldurma
             var dt = new DataTable();
             dt.Columns.Add("TransactionId", typeof(Guid));
             dt.Columns.Add("TransactionDate", typeof(DateTime));
@@ -177,7 +232,7 @@ namespace FuelTransactionImporterService.Service
             dt.Columns.Add("UnitPrice", typeof(decimal));
 
             var sb = new StringBuilder();
-            foreach (var t in newTransactions)
+            foreach (var t in groupedTransactions)
             {
                 dt.Rows.Add(Guid.NewGuid(), t.TransactionDate, t.Plate, DBNull.Value, t.Liter, t.FuelType,
                     t.StationTransactionId, DateTime.Now, t.ViuId, DBNull.Value, t.TotalPrice, t.UnitPrice);
@@ -193,7 +248,7 @@ namespace FuelTransactionImporterService.Service
                 await bulkCopy.WriteToServerAsync(dt);
             }
 
-            _logger.Log($"{newTransactions.Count} yeni kayıt işlendi.");
+            _logger.Log($"{groupedTransactions.Count} yeni kayıt işlendi (10 dk içinde birleştirilmiş).");
             _logger.Log(sb.ToString());
         }
     }
