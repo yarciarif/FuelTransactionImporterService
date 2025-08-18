@@ -216,7 +216,7 @@ namespace FuelTransactionImporterService.Service
                     groupedTransactions.Add(currentGroup);
             }
 
-            //Datatable oluştur ve veritabanına yaz
+
             var dt = new DataTable();
             dt.Columns.Add("TransactionId", typeof(Guid));
             dt.Columns.Add("TransactionDate", typeof(DateTime));
