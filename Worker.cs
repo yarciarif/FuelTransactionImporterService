@@ -23,7 +23,7 @@ public class Worker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Servis çalýþýrken hata oluþtu.");
+                _logger.LogError(ex, "Servis baþlatýlýrken hata ile karþýlaþtýnýz.");
             }
 
             await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
