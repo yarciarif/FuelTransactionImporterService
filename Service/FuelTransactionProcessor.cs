@@ -40,7 +40,6 @@ namespace FuelTransactionImporterService.Service
             _logger.Log($"===== Çalışma Bitti | Süre: {sw.ElapsedMilliseconds} ms =====\n");
         }
 
-
         private async Task ProcessTransactionsAsync()
         {
             using var httpClient = new HttpClient();
@@ -77,8 +76,8 @@ namespace FuelTransactionImporterService.Service
             }
 
             var responseString = await response.Content.ReadAsStringAsync();
-
             using var jsonDoc = JsonDocument.Parse(responseString);
+
             if (!jsonDoc.RootElement.TryGetProperty("jsoN_ReturnData", out JsonElement returnDataElement))
             {
                 _logger.Log("API yanıtında 'jsoN_ReturnData' bulunamadı.");
@@ -86,6 +85,7 @@ namespace FuelTransactionImporterService.Service
             }
 
             string jsonReturnDataString = returnDataElement.GetString();
+
             if (string.IsNullOrWhiteSpace(jsonReturnDataString) || jsonReturnDataString == "[]")
             {
                 _logger.Log("Yeni veri bulunamadı.");
@@ -94,14 +94,18 @@ namespace FuelTransactionImporterService.Service
 
             var transactionsArray = JsonDocument.Parse(jsonReturnDataString).RootElement;
 
-            var transactions = transactionsArray.EnumerateArray()
+            var transactions = transactionsArray
+                .EnumerateArray()
                 .Select(item =>
                 {
                     decimal totalPrice = 0;
+
                     if (item.TryGetProperty("AMOUNT", out var amountProp))
                     {
                         if (amountProp.ValueKind == JsonValueKind.Number)
+                        {
                             totalPrice = amountProp.GetDecimal();
+                        }
                         else if (amountProp.ValueKind == JsonValueKind.String)
                         {
                             var amountStr = amountProp.GetString();
@@ -112,7 +116,8 @@ namespace FuelTransactionImporterService.Service
                         }
                     }
 
-                    decimal unitPrice = item.TryGetProperty("UNIT_PRICE", out var unitProp) && unitProp.ValueKind == JsonValueKind.Number
+                    decimal unitPrice = item.TryGetProperty("UNIT_PRICE", out var unitProp) &&
+                                        unitProp.ValueKind == JsonValueKind.Number
                         ? unitProp.GetDecimal()
                         : 0;
 
@@ -142,9 +147,12 @@ namespace FuelTransactionImporterService.Service
 
             var allIds = transactions.Select(t => t.StationTransactionId).Distinct().ToList();
             var paramNames = allIds.Select((id, index) => "@id" + index).ToList();
-            var cmdText = $"SELECT StationTransactionId FROM dbo.AY_TransactionData WHERE StationTransactionId IN ({string.Join(",", paramNames)})";
+
+            var cmdText =
+                $"SELECT StationTransactionId FROM dbo.AY_TransactionData WHERE StationTransactionId IN ({string.Join(",", paramNames)})";
 
             var existingIds = new HashSet<string>();
+
             using (var cmdCheck = new SqlCommand(cmdText, conn))
             {
                 for (int i = 0; i < allIds.Count; i++)
@@ -156,66 +164,12 @@ namespace FuelTransactionImporterService.Service
             }
 
             var newTransactions = transactions.Where(t => !existingIds.Contains(t.StationTransactionId)).ToList();
+
             if (!newTransactions.Any())
             {
                 _logger.Log("Yeni kayıt bulunamadı.");
                 return;
             }
-
-            // 10 dk içinde aynı plaka ve VIU_ID olanları birleştir
-            var groupedTransactions = new List<TransactionRecord>();
-
-            foreach (var plateGroup in newTransactions.GroupBy(t => new { t.Plate, t.ViuId }))
-            {
-                TransactionRecord currentGroup = null;
-
-                foreach (var t in plateGroup.OrderBy(t => t.TransactionDate))
-                {
-                    if (currentGroup == null)
-                    {
-                        currentGroup = new TransactionRecord
-                        {
-                            Plate = t.Plate,
-                            ViuId = t.ViuId,
-                            TransactionDate = t.TransactionDate,
-                            FuelType = t.FuelType,
-                            Liter = t.Liter,
-                            TotalPrice = t.TotalPrice,
-                            UnitPrice = t.UnitPrice,
-                            StationTransactionId = t.StationTransactionId
-                        };
-                    }
-                    else
-                    {
-                        var diff = t.TransactionDate - currentGroup.TransactionDate;
-                        if (diff.TotalMinutes <= 10)
-                        {
-                            currentGroup.Liter += t.Liter;
-                            currentGroup.TotalPrice += t.TotalPrice;
-                            currentGroup.StationTransactionId += $", {t.StationTransactionId}";
-                        }
-                        else
-                        {
-                            groupedTransactions.Add(currentGroup);
-                            currentGroup = new TransactionRecord
-                            {
-                                Plate = t.Plate,
-                                ViuId = t.ViuId,
-                                TransactionDate = t.TransactionDate,
-                                FuelType = t.FuelType,
-                                Liter = t.Liter,
-                                TotalPrice = t.TotalPrice,
-                                UnitPrice = t.UnitPrice,
-                                StationTransactionId = t.StationTransactionId
-                            };
-                        }
-                    }
-                }
-
-                if (currentGroup != null)
-                    groupedTransactions.Add(currentGroup);
-            }
-
 
             var dt = new DataTable();
             dt.Columns.Add("TransactionId", typeof(Guid));
@@ -232,12 +186,29 @@ namespace FuelTransactionImporterService.Service
             dt.Columns.Add("UnitPrice", typeof(decimal));
 
             var sb = new StringBuilder();
-            foreach (var t in groupedTransactions)
-            {
-                dt.Rows.Add(Guid.NewGuid(), t.TransactionDate, t.Plate, DBNull.Value, t.Liter, t.FuelType,
-                    t.StationTransactionId, DateTime.Now, t.ViuId, DBNull.Value, t.TotalPrice, t.UnitPrice);
 
-                sb.AppendLine($"Plaka: {t.Plate}, Tarih: {t.TransactionDate:yyyy-MM-dd HH:mm:ss}, Miktar: {t.Liter}, Ürün: {t.FuelType}, Tutar: {t.TotalPrice} ₺, Birim Fiyat: {t.UnitPrice} ₺");
+            foreach (var t in newTransactions)
+            {
+                dt.Rows.Add(
+                    Guid.NewGuid(), 
+                    t.TransactionDate,
+                    t.Plate,
+                    DBNull.Value,
+                    t.Liter,
+                    t.FuelType,
+                    t.StationTransactionId,
+                    DateTime.Now,
+                    t.ViuId,
+                    DBNull.Value,
+                    t.TotalPrice,
+                    t.UnitPrice
+                );
+
+                sb.AppendLine(
+                    $"Plaka: {t.Plate}, Tarih: {t.TransactionDate:yyyy-MM-dd HH:mm:ss}, " +
+                    $"Miktar: {t.Liter}, Ürün: {t.FuelType}, " +
+                    $"Tutar: {t.TotalPrice} ₺, Birim Fiyat: {t.UnitPrice} ₺"
+                );
             }
 
             using (var bulkCopy = new SqlBulkCopy(conn))
@@ -245,10 +216,11 @@ namespace FuelTransactionImporterService.Service
                 bulkCopy.DestinationTableName = "dbo.AY_TransactionData";
                 foreach (DataColumn col in dt.Columns)
                     bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
+
                 await bulkCopy.WriteToServerAsync(dt);
             }
 
-            _logger.Log($"{groupedTransactions.Count} yeni kayıt işlendi (10 dk içinde birleştirilmiş).");
+            _logger.Log($"{newTransactions.Count} yeni kayıt işlendi.");
             _logger.Log(sb.ToString());
         }
     }
